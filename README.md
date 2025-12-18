@@ -1,4 +1,4 @@
-# Feature Purity in Vision-Language Models
+# Feature Purity in Vision-Language Models [Neurips 2025] Code for Contrastive Learning with Data Misalignment
 
 This repository contains code for investigating feature purity in CLIP-style vision-language models. Our work demonstrates that high-quality image-text alignment leads to more orthogonal (pure) feature representations, which in turn improves downstream generalization performance.
 
