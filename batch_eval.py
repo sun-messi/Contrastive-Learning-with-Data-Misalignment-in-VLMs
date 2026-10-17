@@ -1,4 +1,6 @@
 import os
+import argparse
+from pathlib import Path
 import torch
 import torchvision
 from torchvision import transforms
@@ -11,16 +13,7 @@ import open_clip
 import clip
 from sklearn.metrics import silhouette_score
 
-sys.path.append('/home/sunj11/Documents/LaCLIP')
 from models import CLIP_VITB16
-
-base_ckpt_paths = {
-    "Cs0": "/home/sunj11/Documents/LaCLIP/checkpoint/cc3m_laclip.pt",
-    # "Cs10": "/home/sunj11/Documents/LaCLIP/finetune_result_Cs10/checkpoint.pt",
-    # "Cs30": "/home/sunj11/Documents/LaCLIP/finetune_result_Cs30/checkpoint.pt",
-    # "Cs50": "/home/sunj11/Documents/LaCLIP/finetune_result_Cs50/checkpoint.pt",
-    # "Cs80": "/home/sunj11/Documents/LaCLIP/finetune_result_Cs80/checkpoint.pt"
-}
 
 def get_model(model):
     return model.module if isinstance(model, (torch.nn.DataParallel, torch.nn.parallel.DistributedDataParallel)) else model
@@ -97,12 +90,25 @@ def load_dataset(name):
         raise ValueError(name)
 
 def main():
+    parser = argparse.ArgumentParser(description='Evaluate CLIP/LaCLIP checkpoints.')
+    parser.add_argument('--checkpoints', nargs='+', required=True, metavar='LABEL:PATH')
+    parser.add_argument('--output-dir', default='results/comparison')
+    parser.add_argument('--datasets', nargs='+', choices=['CALTECH101','CIFAR10','CIFAR100','FOOD101','PETS','STL10'], default=['CALTECH101','CIFAR10','CIFAR100','FOOD101','PETS','STL10'])
+    args = parser.parse_args()
+    checkpoints = {}
+    for item in args.checkpoints:
+        label, sep, path = item.partition(':')
+        if not sep or not label or '/' in label or '\\' in label or label in ('.','..') or not Path(path).is_file():
+            parser.error('Use LABEL:PATH with a simple label and an existing checkpoint.')
+        if label in checkpoints:
+            parser.error('Checkpoint labels must be unique.')
+        checkpoints[label] = path
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    datasets = ["CALTECH101", "CIFAR10", "CIFAR100", "FOOD101", "PETS", "STL10"]
+    datasets = args.datasets
 
-    for tag, ckpt_path in base_ckpt_paths.items():
+    for tag, ckpt_path in checkpoints.items():
         print(f"\n\n======== {tag} ========")
-        save_dir = f"/home/sunj11/Documents/LaCLIP/{tag}_full512_results"
+        save_dir = os.path.join(args.output_dir, f"{tag}_full512_results")
         os.makedirs(save_dir, exist_ok=True)
         for dataset_name in datasets:
             print(f"Processing {dataset_name}")

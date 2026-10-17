@@ -5,25 +5,26 @@ This script analyzes neuron cosine similarity across different checkpoints
 to quantify feature purity changes due to misalignment.
 
 Usage:
-    python analyze_purity.py --checkpoints Cs0:path1 Cs10:path2 --output results.csv
+    python analyze_purity.py --checkpoints Cs0:path1 Cs10:path2 --output-csv results.csv
 """
 
 import argparse
 import torch
 import numpy as np
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from collections import OrderedDict
 from pathlib import Path
 import sys
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'src'))
-from models import CLIP_VITB16
+
 
 
 def load_model(ckpt_path):
     """Load CLIP model from checkpoint"""
+    from models import CLIP_VITB16
     print(f"Loading model from {ckpt_path}")
     ckpt = torch.load(ckpt_path, map_location='cpu')
     
@@ -41,6 +42,8 @@ def load_model(ckpt_path):
 def normalize_tensor(V):
     """Normalize vectors to unit length"""
     norm = torch.norm(V, p=2, dim=1, keepdim=True)
+    if torch.any(norm == 0):
+        raise ValueError('Projection contains zero-norm neurons; cosine similarity is undefined.')
     return V / norm
 
 
@@ -55,7 +58,11 @@ def compute_purity_metrics(projection):
         dict: Dictionary containing various purity metrics
     """
     # Transpose to get neurons as rows: (512, 768)
-    V = projection.T
+    if projection.ndim != 2 or projection.shape[1] < 2:
+        raise ValueError('Expected a 2-D projection with at least two output neurons.')
+    if not torch.isfinite(projection).all():
+        raise ValueError('Projection must contain only finite values.')
+    V = projection.detach().float().T
     V_norm = normalize_tensor(V)
     
     # Compute cosine similarity matrix: (512, 512)
@@ -78,7 +85,7 @@ def compute_purity_metrics(projection):
     metrics['per_neuron_purity_mean'] = (1.0 / per_neuron_sim.mean()).item()
     metrics['per_neuron_purity_std'] = torch.std(1.0 / per_neuron_sim).item()
     
-    return metrics, cosine_sim_no_diag.numpy()
+    return metrics, cosine_sim_no_diag.cpu().numpy()
 
 
 def plot_cosine_histogram(cosine_matrices, labels, output_path):
@@ -214,7 +221,8 @@ def main():
         results.append(result_dict)
         
         # Print key metrics
-        print(f"  Text Avg Abs Cos Sim: {result_dict.get('text_avg_abs_cos_sim', 'N/A'):.4f}")
+        if "text_avg_abs_cos_sim" in result_dict:
+            print(f"  Text Avg Abs Cos Sim: {result_dict['text_avg_abs_cos_sim']:.4f}")
         if 'image_avg_abs_cos_sim' in result_dict:
             print(f"  Image Avg Abs Cos Sim: {result_dict['image_avg_abs_cos_sim']:.4f}")
     
@@ -223,12 +231,17 @@ def main():
     df = df.sort_values('Cs')
     
     # Save results
+    for output in (args.output_csv, args.output_plot, args.output_hist):
+        Path(output).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(args.output_csv, index=False, float_format='%.6f')
     print(f"\n✓ Results saved to {args.output_csv}")
     
     # Generate plots
     if len(df) > 1:
-        plot_purity_vs_misalignment(df, args.output_plot)
+        prefix = 'image' if args.projection == 'image' else 'text'
+        plot_df = df.rename(columns={f'{prefix}_avg_abs_cos_sim': 'avg_abs_cos_sim',
+                                     f'{prefix}_max_abs_cos_sim': 'max_abs_cos_sim'})
+        plot_purity_vs_misalignment(plot_df, args.output_plot)
         plot_cosine_histogram(cosine_matrices, labels, args.output_hist)
     
     # Print summary
@@ -247,7 +260,7 @@ def main():
         for _, row in df.iterrows():
             if row['Cs'] > 0:
                 purity = row[proj_name]
-                change = ((purity - baseline) / baseline) * 100
+                change = ((purity - baseline) / baseline) * 100 if baseline != 0 else float('nan')
                 print(f"  Cs={row['Cs']:.1f}: {purity:.4f} ({change:+.1f}%)")
     
     print("\n✓ Analysis complete!")
