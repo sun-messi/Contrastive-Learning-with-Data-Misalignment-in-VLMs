@@ -1,3 +1,5 @@
+import argparse
+from pathlib import Path
 import torch
 import torchvision
 from torchvision import transforms
@@ -11,15 +13,13 @@ import open_clip
 import clip
 from sklearn.metrics import silhouette_score
 
-# 添加LaCLIP仓库路径
-sys.path.append('/home/sunj11/Documents/LaCLIP')
 from models import CLIP_VITB16
 from tokenizer import SimpleTokenizer
 
 # 配置
-device = torch.device("cuda:7" if torch.cuda.is_available() else "cpu")
-ckpt_path = "/home/sunj11/Documents/LaCLIP/result_cc3m_laclip/cc3m_laclip.pt"
-save_dir_base = "/home/sunj11/Documents/LaCLIP/result_cc3m_laclip/"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+ckpt_path = "checkpoints/cc3m_laclip.pt"
+save_dir_base = "results/pruning"
 
 DATASETS = ["CIFAR10", "CIFAR100", "FOOD101", "CALTECH101", "PETS", "DTD", "EUROSAT"]
 
@@ -178,11 +178,25 @@ def evaluate_zeroshot_classification(model, dataset, cls_names, is_laion_model, 
     return results
 
 def main():
+    global device, ckpt_path, save_dir_base, DATASETS
+    parser = argparse.ArgumentParser(description='Evaluate matched projection-column selection.')
+    parser.add_argument('--checkpoint', required=True, type=Path)
+    parser.add_argument('--output-dir', default='results/pruning')
+    parser.add_argument('--device', default=str(device))
+    parser.add_argument('--datasets', nargs='+', choices=DATASETS, default=DATASETS)
+    parser.add_argument('--sam-values', type=int, nargs='+', default=list(range(200, 501, 50)))
+    args = parser.parse_args()
+    if not args.checkpoint.is_file():
+        parser.error('Checkpoint does not exist.')
+    if any(k < 1 or k > 512 for k in args.sam_values):
+        parser.error('Retained dimensions must be between 1 and 512 for CLIP_VITB16.')
+    device = torch.device(args.device)
+    ckpt_path, save_dir_base, DATASETS = str(args.checkpoint), args.output_dir, args.datasets
     checkpoints = {
         "CC3M LaCLIP": ckpt_path,
     }
 
-    sam_values = list(range(200, 501, 50))
+    sam_values = args.sam_values
 
     for DATASET in DATASETS:
         dataset, cls_names = load_dataset(DATASET)
@@ -221,6 +235,7 @@ def main():
                     print(f"评估模型 {model_name} 时出错: {str(e)}")
                     import traceback
                     traceback.print_exc()
+                    raise  # Do not silently write partial/empty results as a successful run.
 
         acc_df = pd.DataFrame(acc_rows)
         ss_df = pd.DataFrame(ss_rows)

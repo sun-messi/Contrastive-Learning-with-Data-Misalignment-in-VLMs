@@ -11,3 +11,7 @@ ftfy>=6.0.0
 regex>=2021.0.0
 matplotlib>=3.4.0
 requests>=2.26.0
+
+# OpenAI CLIP supplies `clip` and its BPE vocabulary (not the unrelated PyPI clip package).
+git+https://github.com/openai/CLIP.git
+tensorboard

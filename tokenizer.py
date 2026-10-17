@@ -10,7 +10,15 @@ import torch
 
 @lru_cache()
 def default_bpe():
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "bpe_simple_vocab_16e6.txt.gz")
+    local = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bpe_simple_vocab_16e6.txt.gz")
+    if os.path.isfile(local):
+        return local
+    try:
+        from clip.simple_tokenizer import default_bpe as clip_bpe
+        return clip_bpe()
+    except ImportError as exc:
+        raise FileNotFoundError("Missing CLIP BPE vocabulary. Install requirements.txt or place "
+                                "bpe_simple_vocab_16e6.txt.gz beside tokenizer.py.") from exc
 
 
 @lru_cache()

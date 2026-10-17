@@ -90,6 +90,8 @@ best_acc1 = 0
 
 
 def main(args):
+    if args.resume and not os.path.isfile(args.resume):
+        raise FileNotFoundError(f'Requested checkpoint does not exist: {args.resume}')
     utils.init_distributed_mode(args)
 
     global best_acc1
